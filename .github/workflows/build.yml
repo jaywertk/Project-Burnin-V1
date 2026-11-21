@@ -1,0 +1,71 @@
+name: Build Project Burnin
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+# Cancel an older run of the same branch when a new one starts
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  CSC_IDENTITY_AUTO_DISCOVERY: false   # skip code signing (no certificates)
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows
+            cmd: npx electron-builder --win portable --publish never
+          - os: ubuntu-latest
+            name: linux
+            cmd: npx electron-builder --linux deb tar.gz --publish never
+          - os: macos-latest
+            name: macos-apple-silicon
+            cmd: npx electron-builder --mac zip dmg --arm64 --publish never
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build UI
+        run: npm run build
+
+      - name: Package app
+        run: ${{ matrix.cmd }}
+
+      - name: List output
+        shell: bash
+        run: ls -la release || true
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: project-burnin-${{ matrix.name }}
+          path: |
+            release/*.exe
+            release/*.deb
+            release/*.tar.gz
+            release/*.dmg
+            release/*.zip
+          if-no-files-found: error
+          retention-days: 30
